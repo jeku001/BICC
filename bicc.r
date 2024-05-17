@@ -37,3 +37,4 @@ ggplotly(
     theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
     labs(x = 'Month', y = 'Indicator')
   )
+
