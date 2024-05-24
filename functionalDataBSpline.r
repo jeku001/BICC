@@ -2,11 +2,13 @@ df
 library(dplyr)
 library(fda)
 library(ggplot2)
-library(ggplotly)
+library(plotly)
 
 df_list <- df %>%
   group_by(Rok) %>%
   group_split()
+
+# Przygotowanie danych funkcjonalnych z danych dyskretnych ----------------
 
 # Remove the first two columns from each dataframe in the list
 df_list <- lapply(df_list, function(x) x[, "Wskaznik", drop = FALSE])
@@ -18,13 +20,13 @@ range_val <- c(1, 12)  # Range of the data (months 1 to 12)
 # Function to create B-spline basis
 create_bspline_basis <- function(data, n_basis, range_val) {
   # Ensure the 'Wskaznik' column is numeric
-  somedata <- as.numeric(data$Wskaznik)
+  Wskaznik <- as.numeric(data$Wskaznik)
 
   # Create a B-spline basis
   basis <- create.bspline.basis(rangeval = range_val, nbasis = n_basis)
   
   # Fit the B-spline basis to the data
-  smooth_basis <- smooth.basis(argvals = 1:12, y = somedata, fdParobj = basis)
+  smooth_basis <- smooth.basis(argvals = 1:12, y = Wskaznik, fdParobj = basis)
   
   return(smooth_basis)
 }
@@ -66,3 +68,43 @@ ggplotly(ggplot(plot_data, aes(x = M.c, y = Wskaznik, color = factor(Rok))) +
   labs(title = "B-spline Smoothed Data by Year", x = "Month", y = "Smoothed Values") +
   theme_minimal() +
   scale_color_discrete(name = "Year"))
+
+# Bez 2020
+
+plot_data2 <- plot_data[plot_data$Rok != 2020,]
+
+ggplotly(ggplot(plot_data2, aes(x = M.c, y = Wskaznik, color = factor(Rok))) +
+           geom_line(size = 1) +
+           labs(title = "B-spline Smoothed Data by Year", x = "Month", y = "Smoothed Values") +
+           theme_minimal() +
+           scale_color_discrete(name = "Year"))
+
+# Liniowa regresja dla funkcjonalnych danych (po miesiacach) --------------
+
+years <- c(2000:2019, 2021)
+months <- seq(1, 12, length.out = 100)
+
+predict_monthly <- function(data, month) {
+  # Filtrujemy dane dla wybranego miesiaca
+  monthly_data <- data %>% filter(M.c == month)
+  
+  # Model regresji liniowej
+  model <- lm(Wskaznik ~ Rok, data = monthly_data)
+  
+  # Przewidywane lata
+  future_years <- data.frame(Rok = c(2022, 2023), M.c = month)
+  
+  # Przewidywanie wartosci
+  predictionsWith2020 <- predict(model, newdata = future_years)
+  
+  return(data.frame(Rok = future_years$Rok, M.c = future_years$M.c, Wskaznik = predictionsWith2020))
+}
+
+predicted_values <- lapply(months, function(m) predict_monthly(plot_data2, m))
+combined_fun_data <- bind_rows(plot_data2, predicted_values)
+
+ggplotly(ggplot(combined_fun_data, aes(x = M.c, y = Wskaznik, color = factor(Rok))) +
+           geom_line(size = 1) +
+           labs(title = "B-spline Smoothed Data by Year", x = "Month", y = "Smoothed Values") +
+           theme_minimal() +
+           scale_color_discrete(name = "Year"))
