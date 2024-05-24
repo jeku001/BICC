@@ -81,8 +81,7 @@ ggplotly(ggplot(plot_data2, aes(x = M.c, y = Wskaznik, color = factor(Rok))) +
 
 # Liniowa regresja dla funkcjonalnych danych (po miesiacach) --------------
 
-years <- c(2000:2019, 2021)
-months <- seq(1, 12, length.out = 100)
+months_fun <- seq(1, 12, length.out = 100)
 
 predict_monthly <- function(data, month) {
   # Filtrujemy dane dla wybranego miesiaca
@@ -100,7 +99,7 @@ predict_monthly <- function(data, month) {
   return(data.frame(Rok = future_years$Rok, M.c = future_years$M.c, Wskaznik = predictionsWith2020))
 }
 
-predicted_values <- lapply(months, function(m) predict_monthly(plot_data2, m))
+predicted_values <- lapply(months_fun, function(m) predict_monthly(plot_data2, m))
 combined_fun_data <- bind_rows(plot_data2, predicted_values)
 
 ggplotly(ggplot(combined_fun_data, aes(x = M.c, y = Wskaznik, color = factor(Rok))) +
