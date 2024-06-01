@@ -5,22 +5,22 @@ date: "Maj 2024"
 output: html_document
 ---
 
-1. Wstęp
-2. Opis metod prognozowania
-    1. Analiza regresji
-    2. ARIMA
-    3. Prophet
-    4. STL, TBATS
-    5. Ostateczna predykcja
-3. Przewidywanie
-4. Podsumowanie
+1.  Wstęp
+2.  Opis metod prognozowania
+    1.  Analiza regresji
+    2.  ARIMA
+    3.  Prophet
+    4.  STL, TBATS
+    5.  Ostateczna predykcja
+3.  Przewidywanie
+4.  Podsumowanie
 
 ### 1. Wstęp
 
 Wyzwanie konkursowe polega na predykcji wskaźnika bezrobocia na lata 2022-2023, na podstawie danych z 2000-2021. Analizę będziemy przeprowadzać przy użyciu języka R w programie RStudio, do obliczeń i przewidywań użyjemy m.in. z bibliotek takich jak *forecast*, *prophet*, *WSTAW POTEM*, do wizualizacji - *ggplot2*, a do utworzenia ostatecznego raportu posłużymy się oprogramowaniem *RMarkdown*.
 
 Wejściowe dane przyjmują formę szeregu czasowego - realizacji *procesu stochastycznego*, którego dziedziną jest czas - w tym przypadku po 12 miesięcy z 22 lat. Procesem stochastycznym $(X_t)_{t \in T}$ nazywamy rodzinę zmiennych losowych z pewnej przestrzeni probabilistycznej, przyjmującą wartości z przestrzeni mierzalnej.
-  
+
 Dane wskaźnika bezrobocia w latach 2000-2021 przedstawiają się w następujący sposób:
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
@@ -51,13 +51,11 @@ ggplotly(
     theme_light() +
     theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
     labs(x = 'Miesiąc', y = 'Wskaźnik') +
-    ylim(93,108)
+    ylim(91,107)
   )
 ```
 
 Od razu zauważamy, że dane podlegają dostrzegalnemu, nieliniowemu trendowi - wartość wskaźnika spada na początku roku, w okolicy połowy roku wzrasta, by potem delikatnie spadać, lub utrzymywać się aż do października, a na koniec roku znowu wzrasta. Występuje oczywiście sezonowość o okresie 12 miesięcy
-
-Widać tutaj pewną anomalię w roku 2020 - wskaźnik bezrobocia wyraźnie wzrósł w kwietniu w wyniku wybuchu pandemii COVID-19. Problem ten można rozwiązać na kilka sposobów - DOPISAC POZNIEJ.
 
 By sprawdzić podejrzenia wynikające z wizualnej obserwacji powyższych wykresów, przeprowadzamy dekompozycję STL. Ma ona wskazać składniki szeregu czasowego - jego trend, sezonowość oraz reszty.
 
@@ -68,8 +66,35 @@ ts_stl <- ts(df$Wskaznik, frequency = 12, start = c(2000,12))
 autoplot(mstl(ts_stl),col=ts_stl)
 ```
 
-Powyższa metoda opiera się na przedstawieniu punktów szeregu czasowego ($y_i, i \in T$) jako suma komponentów sezonowości $s_i$, trendu $t_i$ i reszty $r_i$:
-$$y_i = s_i + t_i + r_i$$
-oraz estymacja owych komponentów. (**CITATION NEEDED**)
+Powyższa metoda opiera się na przedstawieniu punktów szeregu czasowego ($y_i, i \in T$) jako suma komponentów sezonowości $s_i$, trendu $t_i$ i reszty $r_i$: $$y_i = s_i + t_i + r_i$$ oraz estymacja owych komponentów. (**CITATION NEEDED**)
+
+Obserwując surowe dane, widzimy pewną anomalię w roku 2020 - wyraźny skok wartości wskaźnika bezrobocia w kwietniu w wyniku wybuchu pandemii COVID-19. To zaburzenie w danych w większości przypadków obniży jakość prognozy, ponieważ trend w tym okresie zostaje naruszony. Z tym problemem możemy poradzić sobie na kilka sposobów. Istnieje opcja podstawienia średniej wartości wskaźnika z każdego miesiąca do odpowiednich miesięcy z 2020. Można wziąć średnie globalne, lub jedynie z kilku ostatnich lat. Nie ma również większych przeszkód, by zupełnie pominąć ten rok w obliczeniach. Zbadamy także ideę, by użyć danych z lat 2000-2019, by "przewidzieć" wartości z 2020, a następnie dokonywać obliczeń przy użyciu nowych danych z 2020 do predykcji 2022-2023. Dokonamy analizy tych metod w rozdziale 3.
 
 ### 2. Opis metod prognozowania
+
+#### 2.1 Analiza regresji
+
+#### 2.2 ARIMA
+
+#### 2.3 Prophet
+
+Kolejną metodą przewidywania szeregu czasowego jest Prophet, przedstawiony przez Facebooka.[*] Na wyjściowym szeregu dokonujemy dekompozycji w następujący sposób:
+$$y(t) = g(t) + s(t) + h(t) + e_t$$
+W tym przypadku $g(t)$ jest funkcją trendu reprezentującą nieokresowe zmiany wartości szeregu czasowego, $s(t)$ jest funkcją zmian okresowych (np. miesięcznych), a $h(t)$ to efekt świąt, występujących w nieregularnych odstępach czasu. Zakładamy, że błąd $e_t$ ma rozkład normalny.
+funkcje $g(t)$, $s(t)$, $h(t)$ są estymowane przy użyciu m. in. logistycznego modelu wzrostu oraz szeregów Fouriera, ściślej opisane w [*].
+
+DOKONCZYC - PREDYKCJA NASZYCH DANYCH, OPIS CO TAM JEST, WNIOSEK CZY DOBRE CZY NIE
+
+#### 2.4 STL, TBATS
+
+
+
+#### 2.5 Ostateczna predykcja
+
+### 3. Przewidywanie
+
+### 4. Podsumowanie
+
+### Literatura
+
+* Taylor SJ, Letham B. Forecasting at Scale. The American Statistician. 2018
