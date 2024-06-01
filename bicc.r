@@ -3,6 +3,7 @@
 # install.packages('gapminder')
 # install.packages('dplyr')
 # install.packages('scales')
+# install.packages('ggfortify')
 library(ggplot2)
 library(plotly)
 library(gapminder)
@@ -11,15 +12,6 @@ library(dplyr)
 df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
 
 # Wykres calosciowy -------------------------------------------------------
-
-limits <- NULL
-for (i in 1:22) {
-  if (i %in% seq(1, 22, by = 2)) {
-    limits <- c(limits, rep(NA,12))
-    next
-  }
-  limits <- c(limits, i+2000, rep(NA,11))
-}
 
 df$full_date <- as.Date(paste(df$Rok, df$M.c, "01", sep = "-"))
 
@@ -33,10 +25,11 @@ df %>%
 
 yr <- 2000
 while (yr < 2022) {
-  print(shapiro.test((df %>% filter(Rok == yr))$Wskaznik))
+  print(yr)
+  print(shapiro.test((df %>% filter(Rok == yr))$Wskaznik)$p)
   yr <- yr + 1
 }
-shapiro.test(df$Wskaznik[df$Rok==2020])
+shapiro.test(df$Wskaznik[df$Rok==2020])$p
 
 
 # tabela srednich i odchylen wskaznikow - srednie roczne

@@ -1,6 +1,5 @@
-install.packages('prophet')
-install.packages('grid')
-install.packages('gridExtra')
+# install.packages('prophet')
+
 library(prophet)
 library(dplyr)
 library(ggplot2)
