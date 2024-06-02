@@ -83,11 +83,140 @@ $$y(t) = g(t) + s(t) + h(t) + e_t$$
 W tym przypadku $g(t)$ jest funkcją trendu reprezentującą nieokresowe zmiany wartości szeregu czasowego, $s(t)$ jest funkcją zmian okresowych (np. miesięcznych), a $h(t)$ to efekt świąt, występujących w nieregularnych odstępach czasu. Zakładamy, że błąd $e_t$ ma rozkład normalny.
 funkcje $g(t)$, $s(t)$, $h(t)$ są estymowane przy użyciu m. in. logistycznego modelu wzrostu oraz szeregów Fouriera, ściślej opisane w [*].
 
-DOKONCZYC - PREDYKCJA NASZYCH DANYCH, OPIS CO TAM JEST, WNIOSEK CZY DOBRE CZY NIE
+Podstawiając nasze dane uzyskujemy następujące wyniki predykcji:
+
+```{r, message=FALSE, warning=FALSE}
+library(prophet)
+
+df_prophet <- df
+df_prophet$date <- as.Date(paste(df$Rok, df$M.c, "01", sep = "-"))
+df_prophet <- subset(df_prophet, select = c(date, Wskaznik))
+colnames(df_prophet) <- c('ds', 'y')
+model_prophet <- prophet(df_prophet)
+future <- make_future_dataframe(model_prophet,
+                                periods = 24,
+                                freq = 'month')
+forecast <- predict(model_prophet, future)
+forecast[c('ds', 'yhat')] %>%
+  tail(n = 24)
+
+prophet_plot_components(model_prophet, forecast)
+plot(model_prophet, forecast)
+```
+
+Na pierwszym wykresie widzimy krzywą trendu wyznaczoną przez model, łącznie z przewidzianymi ostatnimi latami wraz z przedziałem ufności (niebieskie pole na końcu krzywej), na drugim rysunku - uśrednione, ogólne roczne zmiany wskaźnika. Ostatni wykres przedstawia dodatkowo porównanie rzeczywistych danych (czarne punkty) z tymi estymowanymi przez Prophet (niebieska linia, wraz z przedziałem ufności).
+
+Zbadajmy teraz jakość predykcji, kiedy pominiemy rok 2020 w rozważaniach:
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+df_no_2020<- df %>% subset(Rok!=2020)
+
+df_prophet2 <- df_no_2020
+df_prophet2$date <- as.Date(paste(df_no_2020$Rok, df_no_2020$M.c, "01", sep = "-"))
+df_prophet2 <- subset(df_prophet2, select = c(date, Wskaznik))
+colnames(df_prophet2) <- c('ds', 'y')
+model_prophet2 <- prophet(df_prophet2)
+future2 <- make_future_dataframe(model_prophet2,
+                                periods = 24,
+                                freq = 'month')
+forecast2 <- predict(model_prophet2, future2)
+```
+
+```{r}
+forecast2[c('ds', 'yhat')] %>%
+  tail(n = 24)
+
+prophet_plot_components(model_prophet2, forecast2)
+```
+
+Obserwujemy, że po wyrzuceniu 2020, linia trendu zdecydowanie się wypłaszcza na koniec badanego okresu. Przez to, że model bierze pod uwagę współczynnik świąt, czyli nieregularnych skoków bananej zmiennej, w tym przypadku warto zostawić dane z 2020, zatem ostatecznie bierzemy pierwotną wersję prognozy.
+
+```{r, echo=FALSE}
+PROPHET <- forecast['yhat'] %>%
+  tail(n = 24)
+rownames(PROPHET) <- 1:24
+colnames(PROPHET) <- 'Wskaznik'
+PROPHET
+```
+
 
 #### 2.4 STL, TBATS
 
+OPIS
 
+TEORETYCZNY
+
+TEJ
+
+METODY
+
+BIBLIOGRAFIA[**]
+
+```{r, echo=FALSE}
+MAPE.error <- function(x, y) {
+  result <- mean(abs((x-y)/x)) * 100
+  return(result)
+}
+
+RMSE.error <- function(x, y) {
+  result <- sqrt((sum(x - y)^2)/length(x))
+  return(result)
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(forecast)
+
+ts_tbats <- msts(df$Wskaznik, seasonal.periods = 12)
+model.ts_tbats <- tbats(ts_tbats)
+plot(model.ts_tbats)
+
+model.ts_tbats.forecast <- forecast(model.ts_tbats, h = 24)
+plot(model.ts_tbats.forecast)
+model.ts_tbats.forecast$mean
+
+df.test <- tail(df$Wskaznik, n = 12 * 2)
+
+ts_tbats.predict <- predict(model.ts_tbats.forecast, df.test)
+ts_tbats.test_vs_predicted <- data.frame(df.test, model.ts_tbats.forecast$mean)
+matplot(ts_tbats.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2)
+
+MAPE.error(ts_tbats.test_vs_predicted$df.test,
+           ts_tbats.test_vs_predicted$model.ts_tbats.forecast.mean)
+RMSE.error(ts_tbats.test_vs_predicted$df.test,
+           ts_tbats.test_vs_predicted$model.ts_tbats.forecast.mean)
+```
+
+WERSJA BEZ 2020
+
+```{r, message=FALSE, warning=FALSE}
+ts_tbats2 <- msts(df_no_2020$Wskaznik, seasonal.periods = 12)
+model.ts_tbats2 <- tbats(ts_tbats2)
+plot(model.ts_tbats2)
+
+model.ts_tbats2.forecast <- forecast(model.ts_tbats2, h = 24)
+plot(model.ts_tbats2.forecast)
+model.ts_tbats2.forecast$mean
+
+df_no_2020.test <- tail(df_no_2020$Wskaznik, n = 12 * 2)
+
+ts_tbats2.predict <- predict(model.ts_tbats2.forecast, df_no_2020.test)
+ts_tbats2.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats2.forecast$mean)
+matplot(ts_tbats2.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2)
+
+MAPE.error(ts_tbats2.test_vs_predicted$df_no_2020.test,
+           ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean)
+RMSE.error(ts_tbats2.test_vs_predicted$df_no_2020.test,
+           ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean)
+```
+
+KOMENTARZ CZY BIERZEMY Z 2020 CZY BEZ
+
+```{r, echo=FALSE}
+TBATS <- model.ts_tbats2.forecast$mean %>% as.data.frame()
+colnames(TBATS) <- 'Wskaznik'
+TBATS
+```
 
 #### 2.5 Ostateczna predykcja
 
@@ -98,3 +227,6 @@ DOKONCZYC - PREDYKCJA NASZYCH DANYCH, OPIS CO TAM JEST, WNIOSEK CZY DOBRE CZY NI
 ### Literatura
 
 * Taylor SJ, Letham B. Forecasting at Scale. The American Statistician. 2018
+
+** De Livera A.M., Hyndman R.J., Snyder R.D., Forecasting time series with complex seasonal patterns using exponential smoothing. Journal of the American Statistical Association
+2011, 106, 1513–1527.
