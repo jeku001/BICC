@@ -24,7 +24,8 @@ df.test <- tail(df$Wskaznik, n = 12 * 2) # czesc testowa
 
 ts_stl <- ts(df$Wskaznik, frequency = 12) # utworzenie szeregu czasowego dla stl
 model.ts_stl <- stl(ts_stl, s.window = "periodic") #obliczenie trendu, wahan sezonowych i reszt
-autoplot(model.ts_stl)
+autoplot(model.ts_stl, range.bars = FALSE)
+ts_stl %>% mstl() %>% autoplot(ts_stl)
 
 model.ts_stl.forecast <- forecast(model.ts_stl, h = 24) # predykcja dla kolejnych dwóch lat wraz z granicami
                                                         # przedzialów ufnosci dla poziomów ufnosci 80% i 95%
@@ -99,3 +100,50 @@ matplot(ts_tbats2.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2)
 
 MAPE.error(ts_tbats2.test_vs_predicted$df_no_2020.test, ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean) # 1.169
 RMSE.error(ts_tbats2.test_vs_predicted$df_no_2020.test, ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean) # 3.977
+
+# TBATS ze srednia globalna za rok 2020 -----------------------------------
+
+df_mean2020 <- df
+
+df_mean2020[df_mean2020$Rok == 2020,]$Wskaznik <- mean(df_mean2020[df_mean2020$Rok != 2020,]$Wskaznik)
+
+
+
+ts_tbats3 <- msts(df_mean2020$Wskaznik, seasonal.periods = 12)
+model.ts_tbats3 <- tbats(ts_tbats3)
+plot(model.ts_tbats3)
+
+model.ts_tbats3.forecast <- forecast(model.ts_tbats3, h = 24)
+plot(model.ts_tbats3.forecast)
+model.ts_tbats3.forecast$mean
+
+ts_tbats3.predict <- predict(model.ts_tbats3.forecast, df_no_2020.test)
+ts_tbats3.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats3.forecast$mean)
+matplot(ts_tbats3.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2)
+
+MAPE.error(ts_tbats3.test_vs_predicted$df_no_2020.test, ts_tbats3.test_vs_predicted$model.ts_tbats3.forecast.mean) # 1.009
+RMSE.error(ts_tbats3.test_vs_predicted$df_no_2020.test, ts_tbats3.test_vs_predicted$model.ts_tbats3.forecast.mean) # 2.643
+
+# TBATS ze srednia z lat 2015-2019 za rok 2020 -----------------------------------
+
+df_mean2020.2 <- df
+
+df_mean2020.2[df_mean2020.2$Rok == 2020,]$Wskaznik <- mean(df_mean2020.2[df_mean2020.2$Rok %in% 2015:2019,]$Wskaznik)
+
+ts_tbats4 <- msts(df_mean2020.2$Wskaznik, seasonal.periods = 12)
+model.ts_tbats4 <- tbats(ts_tbats4)
+plot(model.ts_tbats4)
+
+model.ts_tbats4.forecast <- forecast(model.ts_tbats4, h = 24)
+plot(model.ts_tbats4.forecast)
+model.ts_tbats4.forecast$mean
+
+ts_tbats4.predict <- predict(model.ts_tbats4.forecast, df_no_2020.test)
+ts_tbats4.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats4.forecast$mean)
+matplot(ts_tbats4.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2)
+
+MAPE.error(ts_tbats4.test_vs_predicted$df_no_2020.test, ts_tbats4.test_vs_predicted$model.ts_tbats4.forecast.mean) # 1.065
+RMSE.error(ts_tbats4.test_vs_predicted$df_no_2020.test, ts_tbats4.test_vs_predicted$model.ts_tbats4.forecast.mean) # 3.255
+
+TBATS <- model.ts_tbats4.forecast$mean %>% as.data.frame()
+TBATS
