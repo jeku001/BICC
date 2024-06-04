@@ -1,0 +1,241 @@
+---
+title: "Business Intelligence Case Challenge"
+author: "Franciszek Kornobis, Jędrzej Słupski"
+date: "Maj 2024"
+output: html_document
+---
+
+1.  Wstęp
+2.  Opis metod prognozowania
+    1.  Analiza regresji
+    2.  ARIMA
+    3.  Prophet
+    4.  STL, TBATS
+    5.  Ostateczna predykcja
+3.  Przewidywanie
+4.  Podsumowanie
+
+### 1. Wstęp
+
+#### 2.1 Modele regresyjne
+
+
+
+
+
+
+
+
+
+
+
+Jako pierwszą metodę predykcji wybraliśmy regresję liniową ze względu na miesiące. Wartości wskaźnika z n-tego miesiąca z lat 2000-2021 wyznaczają przewidywaną wartość wskaźnika z n-tego miesiąca na lata 2022 i 2023. Ze względu na podatność regresji liniowej na obserwacje odstające zdecydowaliśmy się usunąć rok 2020, ponieważ metoda ta nie wymaga ciągłości danych.
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# ZMIENIC ZEBY TE KODY SIE NIE WYSWIETLALY?
+library(stats)
+library(dplyr)
+library(ggplot2)
+library(tseries)
+library(forecast)
+
+
+
+
+# to sie pojawia tez pozniej
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_no_2020<- df %>% subset(Rok!=2020)
+data <- df_no_2020
+```
+```{r}
+predict_monthly <- function(data, month) {
+  monthly_data <- data %>% filter(M.c == month)
+  model <- lm(Wskaznik ~ Rok, data = monthly_data)
+  future_years <- data.frame(Rok = c(2022, 2023), M.c = month)
+  predictionsWith2020 <- predict(model, newdata = future_years)
+  return(data.frame(Rok = future_years$Rok, M.c = future_years$M.c, Wskaznik = predictionsWith2020))
+}
+
+predictionsWithout2020 <- lapply(1:12, function(m) predict_monthly(data, m))
+
+predictionsWithout2020_df <- do.call(rbind, predictionsWithout2020)
+combined_data <- bind_rows(data, predictionsWithout2020_df)
+```
+```{r,echo=FALSE}
+df_plot <- df_no_2020
+df_plot$Date <- as.Date(paste(df_plot$Rok, df_plot$M.c, "01", sep = "-"))
+df_plot$Type <- "Actual"
+
+forecast_values_regression <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = predictionsWithout2020_df$Wskaznik
+)
+forecast_values_regression$Type <- "Regression"
+names(forecast_values_regression)[2] <- "Wskaznik"
+
+missing_dates <- seq(as.Date("2020-01-01"), as.Date("2020-12-01"), by = "month")
+
+missing_data <- data.frame(Date = missing_dates, Wskaznik = NaN, Type = "Missing")
+combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")], 
+                     forecast_values_regression,
+                     missing_data)
+combined_df <- combined_df[order(combined_df$Date), ] ## sortowanie po dacie
+combined_df$group <- c(rep(1,240),rep(2,12), rep(3,36)) # sztuczne grupy zeby zrobic dziure w wykresie
+
+```
+```{r, message=FALSE, warning=FALSE}
+ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(aes(group = group))+
+  labs(title = "Wskaznik over Time with Forecasts",
+       x = "Date",
+       y = "Wskaznik") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    plot.background = element_rect(fill = "white", colour = "white"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Regression" = "black"))
+
+```
+Ponieważ regresja liniowa jest ogólnym modelem, który nie jest dedykowany dla szeregów czasowych, zdecydowaliśmy się rozszerzyć te metodę o model ARIMA (AutoRegressive Integrated Moving Average).
+<br>
+W modelu tym, część autoregresyjna (AR) jest zasadniczo formą regresji liniowej, gdzie bieżąca wartość szeregu czasowego jest modelowana jako liniowa kombinacja jego przeszłych wartości.
+<br>
+Ponieważ ARIMA również jest podatna na obserwacje odstające oraz wymaga ciągłości danych, zdecydowaliśmy się zastąpić rok 2020 predykcją modelu ARIMA na podstawie lat 2000-2019 i wykorzystać te dane aby przewidzieć wartości wskaźnika na podstawie lat 2000-2021 ze sztucznymi danymi z roku 2020. Mając swiadomość możliwości wystąpienia efektu kaskadowania błędów porównamy to rozwiązanie z klasycznym zastąpieniem roku 2020 średnimi z pozostałych lat.
+
+
+```{r,echo=FALSE}
+# predykcja 2020 ----------------------------------------------------------
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_to_2019 <- df %>% subset(Rok<2020)
+df_after_2020 <- df %>% subset(Rok>2020)
+ts_data <- ts(df_to_2019$Wskaznik, start=c(2000, 1), frequency=12)
+```
+```{r}
+fit_to_2019 <- auto.arima(ts_data)
+forecast_2020 <- forecast(fit_to_2019, h=12)
+plot(forecast_2020)
+```
+```{r,echo=FALSE}
+df_2020 <- data.frame(
+  Rok = rep(2020, 12), 
+  M.c = 1:12,          
+  Wskaznik = forecast_2020$mean[1:12]         
+)
+
+df_arima <- rbind(df_to_2019, df_2020, df_after_2020)
+```
+
+```{r,echo=FALSE}
+# prognoza z wykorzystaniem sztucznego 2020 oraz 2020 jako srednie-------------------------------
+
+df_mean2020 <- df
+srednie_miesiecy <- sapply(1:12, function(miesiac) mean(df$Wskaznik[df$M.c == miesiac & df$Rok != 2020]))
+df_mean2020$Wskaznik[df$Rok == 2020] <- srednie_miesiecy[df$M.c[df$Rok == 2020]]
+ts_data_doubleARIMA <- ts(df_arima$Wskaznik, start=c(2000, 1), frequency=12)
+ts_data_mean <- ts(df_mean2020$Wskaznik, start=c(2000, 1), frequency=12)
+
+```
+
+
+
+
+Tak wygląda rok 2020, którego użyjemy w predykcji lat 2022-2023
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE}
+adf.test(ts_data_doubleARIMA)
+adf.test(ts_data_mean)
+```
+
+Korzystając z funkcji adf.test sprawdzamy, czy spełniona jest stacjonarność modelowanych danych, która jest kluczowym założeniem modelu ARIMA.
+
+```{r}
+
+fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA)
+forecast_values_doubleARIMA <- forecast(fit_doubleARIMA, h=24)
+fit_mean <- auto.arima(ts_data_mean)
+forecast_values_mean <- forecast(fit_mean, h=24)
+
+
+checkresiduals(fit_mean)
+checkresiduals(fit_doubleARIMA)
+```
+
+na powyższych wykresach błędów modelu widać, że zastosowanie podwójnej predykcji jest teoretycznie lepsze niż model biorący rok 2020 jako średnią z pozostałych lat, jednak błędy w 2020r są praktycznie zerowe, wynika to, że rok ten jest dopasowany przez ten sam model. Mimo to zdecydowaliśmy się przyjąć wyniki z modelu korzystającego z podwójnej predykcji.
+```{r, echo = FALSE}
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_plot <- df
+df_plot$Date <- as.Date(paste(df_plot$Rok, df_plot$M.c, "01", sep = "-"))
+
+# First prediction data frame
+forecast_values_doubleARIMA <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = forecast_values_doubleARIMA$mean[1:24]
+)
+
+# Second prediction data frame (example data, replace with actual predictions)
+forecast_values_mean <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = forecast_values_mean$mean[1:24]
+)
+
+# Combine the original and prediction data frames
+df_plot$Type <- "Actual"
+forecast_values_doubleARIMA$Type <- "Double ARIMA"
+names(forecast_values_doubleARIMA)[2] <- "Wskaznik"
+
+forecast_values_mean$Type <- "Mean"
+names(forecast_values_mean)[2] <- "Wskaznik"
+
+combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")], 
+                     forecast_values_doubleARIMA, 
+                     forecast_values_mean)
+
+
+```
+```{r}
+ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(size = 0.4) +  # Adjust the line thickness
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(title = "Wskaznik over Time with Forecasts",
+       x = "Date",
+       y = "Wskaznik") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    plot.background = element_rect(fill = "white", colour = "white"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Double ARIMA" = "red", "Mean" = "black"))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### 2.2 ARIMA
