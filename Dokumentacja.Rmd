@@ -2,7 +2,9 @@
 title: "Business Intelligence Case Challenge"
 author: "Franciszek Kornobis, Jędrzej Słupski"
 date: "Maj 2024"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 1.  Wstęp
@@ -42,16 +44,14 @@ df %>%
 Z podziałem na lata:
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
-ggplotly(
-  df %>%
-    ggplot(aes(x = M.c, y = Wskaznik, color = Rok)) +
-    geom_line() +
-    facet_wrap(~ Rok) +
-    theme_light() +
-    theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
-    labs(x = 'Miesiąc', y = 'Wskaźnik') +
-    ylim(91,107)
-  )
+df %>%
+  ggplot(aes(x = M.c, y = Wskaznik, color = Rok)) +
+  geom_line() +
+  facet_wrap(~ Rok) +
+  theme_light() +
+  theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(x = 'Miesiąc', y = 'Wskaźnik') +
+  ylim(91,107)
 ```
 
 Od razu zauważamy, że dane podlegają dostrzegalnemu, nieliniowemu trendowi - wartość wskaźnika spada na początku roku, w okolicy połowy roku wzrasta, by potem delikatnie spadać, lub utrzymywać się aż do października, a na koniec roku znowu wzrasta. Występuje oczywiście sezonowość o okresie 12 miesięcy
@@ -69,7 +69,7 @@ Powyższa metoda opiera się na przedstawieniu punktów szeregu czasowego ($y_i,
 $$y_i = s_i + t_i + r_i$$ 
 oraz estymacja owych komponentów. [1]
 
-Obserwując surowe dane, widzimy pewną anomalię w roku 2020 - wyraźny skok wartości wskaźnika bezrobocia w kwietniu w wyniku wybuchu pandemii COVID-19. To zaburzenie w danych w większości przypadków obniży jakość prognozy, ponieważ trend w tym okresie zostaje naruszony. Z tym problemem możemy poradzić sobie na kilka sposobów. Istnieje opcja podstawienia średniej wartości wskaźnika z każdego miesiąca do odpowiednich miesięcy z 2020. Można wziąć średnie globalne, lub jedynie z kilku ostatnich lat. Nie ma również większych przeszkód, by zupełnie pominąć ten rok w obliczeniach. Zbadamy także ideę, by użyć danych z lat 2000-2019, by "przewidzieć" wartości z 2020, a następnie dokonywać obliczeń przy użyciu nowych danych z 2020 do predykcji 2022-2023. Dokonamy analizy tych metod w rozdziale 3.
+Obserwując surowe dane, widzimy pewną anomalię w roku 2020 - wyraźny skok wartości wskaźnika bezrobocia w kwietniu w wyniku wybuchu pandemii COVID-19. To zaburzenie w danych w większości przypadków obniży jakość prognozy, ponieważ trend w tym okresie zostaje naruszony. Z tym problemem możemy poradzić sobie na kilka sposobów. Istnieje opcja podstawienia średniej wartości wskaźnika z każdego miesiąca do odpowiednich miesięcy z 2020. Można wziąć średnie globalne, lub jedynie z kilku ostatnich lat. Nie ma również większych przeszkód, by zupełnie pominąć ten rok w obliczeniach. Zbadamy także ideę, by użyć danych z lat 2000-2019, by "przewidzieć" wartości z 2020, a następnie dokonywać obliczeń przy użyciu nowych danych z 2020 do predykcji 2022-2023. Dokonamy analizy tych metod w rozdziale 2.
 
 ### 2. Opis metod prognozowania
 
@@ -130,7 +130,7 @@ combined_df$group <- c(rep(1,240),rep(2,12), rep(3,36)) # sztuczne grupy zeby zr
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
-  geom_line(aes(group = group))+
+  geom_line(size = 0.7, aes(group = group))+
   labs(title = "Wskaznik bezrobocia w czasie wraz z predykcją",
        x = "Date",
        y = "Wskaznik") +
@@ -193,12 +193,16 @@ adf.test(ts_data_doubleARIMA)
 adf.test(ts_data_mean)
 ```
 
+**OPISAC TYTUL WYKRESU**
+
 *KOMENTARZ JAKIE WYNIKI TESTOW*
 
 Zbadajmy następnie błędy *?????? co na skladowych wykresu*
 
+**SEASONAL = TRUE**
+
 ```{r}
-fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA)
+fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA, seasonal = TRUE)
 forecast_values_doubleARIMA <- forecast(fit_doubleARIMA, h=24)
 fit_mean <- auto.arima(ts_data_mean)
 forecast_values_mean <- forecast(fit_mean, h=24)
@@ -226,14 +230,18 @@ forecast_values_mean <- data.frame(
   Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
   Point_Forecast = forecast_values_mean$mean[1:24]
 )
+```
 
+```{r, echo=FALSE}
 df_plot$Type <- "Actual"
 forecast_values_doubleARIMA$Type <- "Double ARIMA"
 names(forecast_values_doubleARIMA)[2] <- "Wskaznik"
 
 forecast_values_mean$Type <- "Mean"
 names(forecast_values_mean)[2] <- "Wskaznik"
+```
 
+```{r}
 combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")], 
                      forecast_values_doubleARIMA, 
                      forecast_values_mean)
@@ -267,7 +275,7 @@ ARIMA <- combined_df[combined_df$Type %in% c('Actual', 'Double ARIMA'),]
 Kolejną metodą przewidywania szeregu czasowego jest Prophet, przedstawiony przez Facebooka.[4] Na wyjściowym szeregu dokonujemy dekompozycji w następujący sposób:
 $$y(t) = g(t) + s(t) + h(t) + e_t$$
 W tym przypadku $g(t)$ jest funkcją trendu reprezentującą nieokresowe zmiany wartości szeregu czasowego, $s(t)$ jest funkcją zmian okresowych (np. miesięcznych), a $h(t)$ to efekt świąt, występujących w nieregularnych odstępach czasu. Zakładamy, że błąd $e_t$ ma rozkład normalny.
-funkcje $g(t)$, $s(t)$, $h(t)$ są estymowane przy użyciu m. in. logistycznego modelu wzrostu oraz szeregów Fouriera, ściślej opisane w [4].
+Funkcje $g(t)$, $s(t)$, $h(t)$ są estymowane przy użyciu m. in. logistycznego modelu wzrostu oraz szeregów Fouriera, ściślej opisane w [4].
 
 Podstawiając nasze dane uzyskujemy następujące wyniki predykcji:
 
@@ -523,9 +531,10 @@ FINAL <- data.frame(
 FINAL$Type <- 'Combination'
 
 FINALFINAL <- rbind(ARIMA[ARIMA$Type == 'Actual',], FINAL)
+FINALFINAL$group <- rep(1, 24*12)
 
 ggplot(FINALFINAL, aes(x = Date, y = Wskaznik, color = Type)) +
-  geom_line(size = 0.4) +
+  geom_line(size = 0.7, aes(group = group)) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
   labs(title = "Wskaznik bezrobocia w czasie z predykcją",
        x = "Date",
@@ -545,6 +554,8 @@ FINAL[,c('Date', 'Wskaznik')]
 ```
 
 ### 4. Podsumowanie
+
+Zaproponowaliśmy w naszym badaniu metodę prognozowania opartą na uśrednieniu rezultatów kilku metod statystycznych w celu zwiększenia ostatecznej efektywności. Wykorzystane modele są dedykowane do szeregów czasowych z widoczną sezonowością, aby sprawdzały się w celach analizy i predykcji wartości wskaźnika bezrobocia. Ostateczna prognoza wydaje się dokładnie odzwierciedlać trend i sezonowość danych z przeszłości.
 
 ### Literatura
 
