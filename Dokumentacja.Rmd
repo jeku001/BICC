@@ -3,10 +3,13 @@ title: "Business Intelligence Case Challenge"
 author: "Franciszek Kornobis, Jędrzej Słupski"
 date: "Maj 2024"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
-
+\begin{center}
+\large {Uniwersytet im. Adama Mickiewicza w Poznaniu}
+\end{center}
+  
 1.  Wstęp
 2.  Opis metod prognozowania
     1.  Modele regresyjne
@@ -16,6 +19,7 @@ output:
 3.  Przewidywanie
 4.  Podsumowanie
 
+\newpage
 ### 1. Wstęp
 
 Wyzwanie konkursowe polega na predykcji wskaźnika bezrobocia na lata 2022-2023, na podstawie danych z 2000-2021. Analizę będziemy przeprowadzać przy użyciu języka R w programie RStudio, do obliczeń i przewidywań użyjemy m.in. z bibliotek takich jak *stats*, *tseries*, *forecast*, *prophet*, do wizualizacji - *ggplot2*, a do utworzenia ostatecznego raportu posłużymy się oprogramowaniem *RMarkdown*.
@@ -50,19 +54,19 @@ df %>%
   facet_wrap(~ Rok) +
   theme_light() +
   theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
-  labs(x = 'Miesiąc', y = 'Wskaźnik') +
+  labs(x = '', y = 'Wskaznik') +
   ylim(91,107)
 ```
 
-Od razu zauważamy, że dane podlegają dostrzegalnemu, nieliniowemu trendowi - wartość wskaźnika spada na początku roku, w okolicy połowy roku wzrasta, by potem delikatnie spadać, lub utrzymywać się aż do października, a na koniec roku znowu wzrasta. Występuje oczywiście sezonowość o okresie 12 miesięcy
+Od razu zauważamy, że dane podlegają dostrzegalnej okresowości - wartość wskaźnika spada na początku roku, w okolicy połowy roku wzrasta, by potem delikatnie spadać, lub utrzymywać się aż do października, a na koniec roku znowu wzrasta. Sezonowość występuje oczywiście w okresie 12 miesięcy.
 
 By sprawdzić podejrzenia wynikające z wizualnej obserwacji powyższych wykresów, przeprowadzamy dekompozycję STL (Seasonal Decomposition of Time Series by Loess). Ma ona wskazać składniki szeregu czasowego - jego trend, sezonowość oraz reszty.
 
-```{r, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
 library(forecast)
 
 ts_stl <- ts(df$Wskaznik, frequency = 12, start = c(2000,12))
-autoplot(mstl(ts_stl),col=ts_stl)
+autoplot(mstl(ts_stl))
 ```
 
 Powyższa metoda opiera się na przedstawieniu punktów szeregu czasowego ($y_i, i \in T$) jako suma komponentów sezonowości $s_i$, trendu $t_i$ i reszty $r_i$: 
@@ -75,7 +79,7 @@ Obserwując surowe dane, widzimy pewną anomalię w roku 2020 - wyraźny skok wa
 
 #### 2.1 Modele regresyjne
 
-Jako pierwszą metodę predykcji wybraliśmy regresję liniową ze względu na miesiące. Wartości wskaźnika z n-tego miesiąca z lat 2000-2021 wyznaczają przewidywaną wartość wskaźnika z n-tego miesiąca na lata 2022 i 2023. Ze względu na podatność regresji liniowej na obserwacje odstające zdecydowaliśmy się usunąć rok 2020, ponieważ metoda ta nie wymaga ciągłości danych. [***CITATION***2]
+Jako pierwszą metodę predykcji wybraliśmy regresję liniową ze względu na miesiące. Wartości wskaźnika z n-tego miesiąca z lat 2000-2021 wyznaczają przewidywaną wartość wskaźnika z n-tego miesiąca na lata 2022 i 2023. Ze względu na podatność regresji liniowej na obserwacje odstające zdecydowaliśmy się usunąć rok 2020, ponieważ metoda ta nie wymaga ciągłości danych. [2]
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE}
 library(dplyr)
@@ -86,7 +90,7 @@ df_no_2020<- df %>% subset(Rok!=2020)
 data <- df_no_2020
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(stats)
 library(tseries)
 library(forecast)
@@ -131,7 +135,7 @@ combined_df$group <- c(rep(1,240),rep(2,12), rep(3,36)) # sztuczne grupy zeby zr
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
   geom_line(size = 0.7, aes(group = group))+
-  labs(title = "Wskaznik bezrobocia w czasie wraz z predykcją",
+  labs(title = "Wskaznik bezrobocia w czasie wraz z predykcja",
        x = "Date",
        y = "Wskaznik") +
   theme(
@@ -140,11 +144,14 @@ ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
   scale_color_manual(values = c("Actual" = "black", "Regression" = "red"))
 ```
 
-Ponieważ regresja liniowa jest ogólnym modelem, który nie jest dedykowany dla szeregów czasowych, zdecydowaliśmy się rozszerzyć te metodę o model ARIMA (Auto Regressive Integrated Moving Average). [***CITATION***3]
+Ponieważ regresja liniowa jest ogólnym modelem, który nie jest dedykowany dla szeregów czasowych, zdecydowaliśmy się rozszerzyć te metodę o model ARIMA (Auto Regressive Integrated Moving Average). [3]
 
-W modelu tym, część autoregresyjna (AR) jest zasadniczo formą regresji liniowej, gdzie bieżąca wartość szeregu czasowego jest modelowana jako liniowa kombinacja jego przeszłych wartości.
+W modelu tym, część autoregresyjna (AR) jest zasadniczo formą regresji liniowej, gdzie bieżąca wartość szeregu czasowego jest modelowana jako liniowa kombinacja jego przeszłych wartości. 
+Drugą częścią modelu ARIMA jest I(integrated), odnosi się różnicowania celem uczynienia szeregu czasowego stacjonarnym. MA (Moving Average) odnosi się do modelu, który wykorzystuje zależność między bieżącą wartością a wcześniejszymi błędami losowymi. 
+<br>
+Model ARIMA(p,d,q) można opisać za pomocą 3 liczb, p oznacza parametr autoregresyjny, d - rząd różnicowania oraz q - parametr średniej ruchomej.
 
-Ponieważ ARIMA również jest podatna na obserwacje odstające oraz wymaga ciągłości danych, zdecydowaliśmy się zastąpić rok 2020 predykcją modelu ARIMA na podstawie lat 2000-2019 i wykorzystać te dane aby przewidzieć wartości wskaźnika na podstawie lat 2000-2021 ze sztucznymi danymi z roku 2020. Mając swiadomość możliwości wystąpienia efektu kaskadowania błędów, porównamy to rozwiązanie z klasycznym zastąpieniem roku 2020 średnimi z pozostałych lat.
+Ponieważ ARIMA również jest podatna na obserwacje odstające, ale wymaga ciągłości danych, zdecydowaliśmy się zastąpić rok 2020 predykcją modelu ARIMA na podstawie lat 2000-2019 i wykorzystać te dane aby przewidzieć wartości wskaźnika na podstawie lat 2000-2021 ze sztucznymi danymi z roku 2020. Mając swiadomość możliwości wystąpienia efektu kaskadowania błędów, porównamy to rozwiązanie z klasycznym zastąpieniem roku 2020 średnimi z pozostałych lat.
 
 ```{r,echo=FALSE}
 # predykcja 2020 
@@ -186,33 +193,31 @@ ts_data_doubleARIMA <- ts(df_arima$Wskaznik, start=c(2000, 1), frequency=12)
 ts_data_mean <- ts(df_mean2020$Wskaznik, start=c(2000, 1), frequency=12)
 ```
 
-Korzystając z funkcji adf.test sprawdzamy, czy spełniona jest stacjonarność modelowanych danych, która jest kluczowym założeniem modelu ARIMA.
+Korzystając z funkcji adf.test sprawdzamy, czy spełniona jest stacjonarność modelowanych danych.
 
 ```{r, message=FALSE, warning=FALSE}
 adf.test(ts_data_doubleARIMA)
 adf.test(ts_data_mean)
 ```
+Odrzucamy hipotezę zerową (pvalue = 0.01) i zakładamy stacjonarność danych. Parametr d będzie więc równy zero, ponieważ nie będzie konieczne różnicowanie.
 
-**OPISAC TYTUL WYKRESU**
 
-*KOMENTARZ JAKIE WYNIKI TESTOW*
 
-Zbadajmy następnie błędy *?????? co na skladowych wykresu*
-
-**SEASONAL = TRUE**
 
 ```{r}
-fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA, seasonal = TRUE)
+fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA, d=0)
 forecast_values_doubleARIMA <- forecast(fit_doubleARIMA, h=24)
-fit_mean <- auto.arima(ts_data_mean)
+fit_mean <- auto.arima(ts_data_mean, d=0)
 forecast_values_mean <- forecast(fit_mean, h=24)
 
 checkresiduals(fit_mean)
 checkresiduals(fit_doubleARIMA)
 ```
 
-Na powyższych wykresach błędów modelu widać, że zastosowanie podwójnej predykcji (drugi przypadek) jest teoretycznie lepsze niż model biorący rok 2020 jako średnią z pozostałych lat *DLACZEGO*. Jednakze, błędy w 2020 są praktycznie zerowe - wynika to z faktu, że rok ten jest dopasowany przez ten sam model. Mimo to zdecydowaliśmy się przyjąć wyniki z modelu korzystającego z podwójnej predykcji.
-*LJUNG BOX TEST??*
+Pierwszą składową wykresu jest rozkład reszt w czasie, drugą jest ACF, pokazuje funkcję autokorelacji reszt. ostatnim wykresem jest histogram reszt, zbliżony do normalnego rozkładu.
+Funkcja auto.arima w obu przypadkach dopasowała parametry p = 1 oraz q = 1. 
+Na powyższych wykresach błędów modelu widać, że obydwa przedstawione rozwiązania są podobnie dopasowane. Jednakze, błędy w 2020 są praktycznie zerowe - wynika to z faktu, że rok ten jest dopasowany przez ten sam model. Mimo to zdecydowaliśmy się przyjąć wyniki z modelu korzystającego z podwójnej predykcji ze względu na jego odmienny charakter.
+Testem Ljung-Boxa upewniliśmy się, że nie ma istotnych autokorelacji w resztach. (pvalue>0.05).
 
 ```{r, echo = FALSE}
 df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
@@ -253,7 +258,7 @@ Ostatecznie, dane przewidziane przy użyciu omówionych metod modeli regresyjnyc
 ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
   geom_line(size = 0.4) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  labs(title = "Wskaznik bezrobocia w czasie z predykcją",
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
        x = "Date",
        y = "Wskaznik") +
   theme(
@@ -487,7 +492,7 @@ TBATS <- model.ts_tbats4.forecast$mean %>% as.data.frame()
 colnames(TBATS) <- 'Wskaznik'
 # TBATS
 ```
-
+\newpage
 #### 2.4 Ostateczna predykcja
 
 Wszystkie wyniki wygenerowane przez omówione modele predykcji przedstawiają się w następujący sposób:
@@ -506,7 +511,7 @@ FULL <- ARIMA %>% rbind(PROPHET) %>% rbind(TBATS)
 ggplot(FULL, aes(x = Date, y = Wskaznik, color = Type)) +
   geom_line(size = 0.4) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  labs(title = "Wskaznik bezrobocia w czasie z predykcją",
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
        x = "Date",
        y = "Wskaznik") +
   theme(
@@ -536,7 +541,7 @@ FINALFINAL$group <- rep(1, 24*12)
 ggplot(FINALFINAL, aes(x = Date, y = Wskaznik, color = Type)) +
   geom_line(size = 0.7, aes(group = group)) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  labs(title = "Wskaznik bezrobocia w czasie z predykcją",
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
        x = "Date",
        y = "Wskaznik") +
   theme(
@@ -561,11 +566,18 @@ Zaproponowaliśmy w naszym badaniu metodę prognozowania opartą na uśrednieniu
 
 1. Cleveland, R. B., Cleveland, W. S., McRae, J. E., & Terpenning, I. J. (1990). STL: A seasonal-trend decomposition procedure based on loess. Journal of Official Statistics, 6(1), 3–33.
 
-2. regresja
+2. Hersh, A., and T. B. Newman. "Linear Regression." AAP Grand Rounds 25, no. 6 (June 1, 2011): 68.
 
-3. arima
+3. Box G.E.P., Jenkins G.M., Reinsel G.C., Ljung G.M., (2015), Time Series
+Analysis: Forecasting and Control. Fifth Edition, John Wiley & Sons
 
 4. Taylor SJ, Letham B. Forecasting at Scale. The American Statistician. 2018
 
 5. De Livera A.M., Hyndman R.J., Snyder R.D., Forecasting time series with complex seasonal patterns using exponential smoothing. Journal of the American Statistical Association
 2011, 106, 1513–1527.
+
+6. https://github.com/cure-lab/LTSF-Linear
+
+
+
+
