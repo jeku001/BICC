@@ -147,7 +147,7 @@ ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
 Ponieważ regresja liniowa jest ogólnym modelem, który nie jest dedykowany dla szeregów czasowych, zdecydowaliśmy się rozszerzyć te metodę o model ARIMA (Auto Regressive Integrated Moving Average). [3]
 
 W modelu tym, część autoregresyjna (AR) jest zasadniczo formą regresji liniowej, gdzie bieżąca wartość szeregu czasowego jest modelowana jako liniowa kombinacja jego przeszłych wartości. 
-Drugą częścią modelu ARIMA jest I(integrated), odnosi się różnicowania celem uczynienia szeregu czasowego stacjonarnym. MA (Moving Average) odnosi się do modelu, który wykorzystuje zależność między bieżącą wartością a wcześniejszymi błędami losowymi. 
+Drugą częścią modelu ARIMA jest I (integrated), która odnosi się do różnicowania celem uczynienia szeregu czasowego stacjonarnym. MA (Moving Average) jest modelem, który wykorzystuje zależność między bieżącą wartością a wcześniejszymi błędami losowymi. 
 <br>
 Model ARIMA(p,d,q) można opisać za pomocą 3 liczb, p oznacza parametr autoregresyjny, d - rząd różnicowania oraz q - parametr średniej ruchomej.
 
@@ -228,13 +228,11 @@ df_plot$Date <- as.Date(paste(df_plot$Rok, df_plot$M.c, "01", sep = "-"))
 ```{r}
 forecast_values_doubleARIMA <- data.frame(
   Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
-  Point_Forecast = forecast_values_doubleARIMA$mean[1:24]
-)
+  Point_Forecast = forecast_values_doubleARIMA$mean[1:24])
 
 forecast_values_mean <- data.frame(
   Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
-  Point_Forecast = forecast_values_mean$mean[1:24]
-)
+  Point_Forecast = forecast_values_mean$mean[1:24])
 ```
 
 ```{r, echo=FALSE}
@@ -251,7 +249,7 @@ combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")],
                      forecast_values_doubleARIMA, 
                      forecast_values_mean)
 ```
-
+\newpage
 Ostatecznie, dane przewidziane przy użyciu omówionych metod modeli regresyjnych przedstawiają się następująco:
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -274,7 +272,7 @@ ARIMA <- combined_df[combined_df$Type == 'Double ARIMA',]
 # nadpisanie zeby potem zrobic tabele wszystkich metod
 ARIMA <- combined_df[combined_df$Type %in% c('Actual', 'Double ARIMA'),]
 ```
-
+\newpage
 #### 2.2 Prophet
 
 Kolejną metodą przewidywania szeregu czasowego jest Prophet, przedstawiony przez Facebooka.[4] Na wyjściowym szeregu dokonujemy dekompozycji w następujący sposób:
