@@ -1,0 +1,581 @@
+---
+title: "Business Intelligence Case Challenge"
+author: "Franciszek Kornobis, Jędrzej Słupski"
+date: "Maj 2024"
+output:
+  pdf_document: default
+  html_document: default
+---
+\begin{center}
+\large {Uniwersytet im. Adama Mickiewicza w Poznaniu}
+\end{center}
+  
+1.  Wstęp
+2.  Opis metod prognozowania
+    1.  Modele regresyjne
+    2.  Prophet
+    3.  TBATS
+    4.  Ostateczna predykcja
+3.  Przewidywanie
+4.  Podsumowanie
+
+\newpage
+### 1. Wstęp
+
+Wyzwanie konkursowe polega na predykcji wskaźnika bezrobocia na lata 2022-2023, na podstawie danych z 2000-2021. Analizę będziemy przeprowadzać przy użyciu języka R w programie RStudio, do obliczeń i przewidywań użyjemy m.in. z bibliotek takich jak *stats*, *tseries*, *forecast*, *prophet*, do wizualizacji - *ggplot2*, a do utworzenia ostatecznego raportu posłużymy się oprogramowaniem *RMarkdown*.
+
+Wejściowe dane przyjmują formę szeregu czasowego - realizacji *procesu stochastycznego*, którego dziedziną jest czas - w tym przypadku po 12 miesięcy z 22 lat. Procesem stochastycznym $(X_t)_{t \in T}$ nazywamy rodzinę zmiennych losowych z pewnej przestrzeni probabilistycznej, przyjmującą wartości z przestrzeni mierzalnej.
+
+Dane wskaźnika bezrobocia w latach 2000-2021 przedstawiają się w następujący sposób:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(plotly)
+library(gapminder)
+library(dplyr)
+library(ggfortify)
+
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df$full_date <- as.Date(paste(df$Rok, df$M.c, "01", sep = "-"))
+
+df %>%
+  ggplot(aes(x = full_date, y = Wskaznik, col = Rok)) +
+  geom_line() +
+  labs(x = 'Czas', y = 'Wskaznik') +
+  scale_x_date()
+```
+
+Z podziałem na lata:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+df %>%
+  ggplot(aes(x = M.c, y = Wskaznik, color = Rok)) +
+  geom_line() +
+  facet_wrap(~ Rok) +
+  theme_light() +
+  theme(legend.position = 'none', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(x = '', y = 'Wskaznik') +
+  ylim(91,107)
+```
+
+Od razu zauważamy, że dane podlegają dostrzegalnej okresowości - wartość wskaźnika spada na początku roku, w okolicy połowy roku wzrasta, by potem delikatnie spadać, lub utrzymywać się aż do października, a na koniec roku znowu wzrasta. Sezonowość występuje oczywiście w okresie 12 miesięcy.
+
+By sprawdzić podejrzenia wynikające z wizualnej obserwacji powyższych wykresów, przeprowadzamy dekompozycję STL (Seasonal Decomposition of Time Series by Loess). Ma ona wskazać składniki szeregu czasowego - jego trend, sezonowość oraz reszty.
+
+```{r, message=FALSE, warning=FALSE}
+library(forecast)
+
+ts_stl <- ts(df$Wskaznik, frequency = 12, start = c(2000,12))
+autoplot(mstl(ts_stl))
+```
+
+Powyższa metoda opiera się na przedstawieniu punktów szeregu czasowego ($y_i, i \in T$) jako suma komponentów sezonowości $s_i$, trendu $t_i$ i reszty $r_i$: 
+$$y_i = s_i + t_i + r_i$$ 
+oraz estymacja owych komponentów. [1]
+
+Obserwując surowe dane, widzimy pewną anomalię w roku 2020 - wyraźny skok wartości wskaźnika bezrobocia w kwietniu w wyniku wybuchu pandemii COVID-19. To zaburzenie w danych w większości przypadków obniży jakość prognozy, ponieważ trend w tym okresie zostaje naruszony. Z tym problemem możemy poradzić sobie na kilka sposobów. Istnieje opcja podstawienia średniej wartości wskaźnika z każdego miesiąca do odpowiednich miesięcy z 2020. Można wziąć średnie globalne, lub jedynie z kilku ostatnich lat. Nie ma również większych przeszkód, by zupełnie pominąć ten rok w obliczeniach. Zbadamy także ideę, by użyć danych z lat 2000-2019, by "przewidzieć" wartości z 2020, a następnie dokonywać obliczeń przy użyciu nowych danych z 2020 do predykcji 2022-2023. Dokonamy analizy tych metod w rozdziale 2.
+
+### 2. Opis metod prognozowania
+
+#### 2.1 Modele regresyjne
+
+Jako pierwszą metodę predykcji wybraliśmy regresję liniową ze względu na miesiące. Wartości wskaźnika z n-tego miesiąca z lat 2000-2021 wyznaczają przewidywaną wartość wskaźnika z n-tego miesiąca na lata 2022 i 2023. Ze względu na podatność regresji liniowej na obserwacje odstające zdecydowaliśmy się usunąć rok 2020, ponieważ metoda ta nie wymaga ciągłości danych. [2]
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_no_2020<- df %>% subset(Rok!=2020)
+data <- df_no_2020
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(stats)
+library(tseries)
+library(forecast)
+
+predict_monthly <- function(data, month) {
+  monthly_data <- data %>% filter(M.c == month)
+  model <- lm(Wskaznik ~ Rok, data = monthly_data)
+  future_years <- data.frame(Rok = c(2022, 2023), M.c = month)
+  predictionsWith2020 <- predict(model, newdata = future_years)
+  return(data.frame(Rok = future_years$Rok, M.c = future_years$M.c, Wskaznik = predictionsWith2020))
+}
+
+predictionsWithout2020 <- lapply(1:12, function(m) predict_monthly(data, m))
+
+predictionsWithout2020_df <- do.call(rbind, predictionsWithout2020)
+combined_data <- bind_rows(data, predictionsWithout2020_df)
+```
+
+```{r,echo=FALSE}
+df_plot <- df_no_2020
+df_plot$Date <- as.Date(paste(df_plot$Rok, df_plot$M.c, "01", sep = "-"))
+df_plot$Type <- "Actual"
+
+forecast_values_regression <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = predictionsWithout2020_df$Wskaznik
+)
+forecast_values_regression$Type <- "Regression"
+names(forecast_values_regression)[2] <- "Wskaznik"
+
+missing_dates <- seq(as.Date("2020-01-01"), as.Date("2020-12-01"), by = "month")
+
+missing_data <- data.frame(Date = missing_dates, Wskaznik = NaN, Type = "Missing")
+combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")], 
+                     forecast_values_regression,
+                     missing_data)
+combined_df <- combined_df[order(combined_df$Date), ] ## sortowanie po dacie
+combined_df$group <- c(rep(1,240),rep(2,12), rep(3,36)) # sztuczne grupy zeby zrobic dziure w wykresie
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(size = 0.7, aes(group = group))+
+  labs(title = "Wskaznik bezrobocia w czasie wraz z predykcja",
+       x = "Date",
+       y = "Wskaznik") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+  scale_color_manual(values = c("Actual" = "black", "Regression" = "red"))
+```
+
+Ponieważ regresja liniowa jest ogólnym modelem, który nie jest dedykowany dla szeregów czasowych, zdecydowaliśmy się rozszerzyć te metodę o model ARIMA (Auto Regressive Integrated Moving Average). [3]
+
+W modelu tym, część autoregresyjna (AR) jest zasadniczo formą regresji liniowej, gdzie bieżąca wartość szeregu czasowego jest modelowana jako liniowa kombinacja jego przeszłych wartości. 
+Drugą częścią modelu ARIMA jest I (integrated), która odnosi się do różnicowania celem uczynienia szeregu czasowego stacjonarnym. MA (Moving Average) jest modelem, który wykorzystuje zależność między bieżącą wartością a wcześniejszymi błędami losowymi. 
+<br>
+Model ARIMA(p,d,q) można opisać za pomocą 3 liczb, p oznacza parametr autoregresyjny, d - rząd różnicowania oraz q - parametr średniej ruchomej.
+
+Ponieważ ARIMA również jest podatna na obserwacje odstające, ale wymaga ciągłości danych, zdecydowaliśmy się zastąpić rok 2020 predykcją modelu ARIMA na podstawie lat 2000-2019 i wykorzystać te dane aby przewidzieć wartości wskaźnika na podstawie lat 2000-2021 ze sztucznymi danymi z roku 2020. Mając swiadomość możliwości wystąpienia efektu kaskadowania błędów, porównamy to rozwiązanie z klasycznym zastąpieniem roku 2020 średnimi z pozostałych lat.
+
+```{r,echo=FALSE}
+# predykcja 2020 
+
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_to_2019 <- df %>% subset(Rok<2020)
+df_after_2020 <- df %>% subset(Rok>2020)
+ts_data <- ts(df_to_2019$Wskaznik, start=c(2000, 1), frequency=12)
+```
+
+Tak wyglądają wartości z 2020, których użyjemy w predykcji lat 2022-2023:
+
+```{r}
+fit_to_2019 <- auto.arima(ts_data)
+forecast_2020 <- forecast(fit_to_2019, h=12)
+```
+
+```{r, echo=FALSE}
+plot(forecast_2020, main = 'Prognoza na 2020 w modelu ARIMA')
+```
+
+```{r,echo=FALSE}
+df_2020 <- data.frame(
+  Rok = rep(2020, 12), 
+  M.c = 1:12,          
+  Wskaznik = forecast_2020$mean[1:12]         
+)
+
+df_arima <- rbind(df_to_2019, df_2020, df_after_2020)
+```
+
+```{r,echo=FALSE}
+# prognoza z wykorzystaniem sztucznego 2020 oraz 2020 jako srednie
+
+df_mean2020 <- df
+srednie_miesiecy <- sapply(1:12, function(miesiac) mean(df$Wskaznik[df$M.c == miesiac & df$Rok != 2020]))
+df_mean2020$Wskaznik[df$Rok == 2020] <- srednie_miesiecy[df$M.c[df$Rok == 2020]]
+ts_data_doubleARIMA <- ts(df_arima$Wskaznik, start=c(2000, 1), frequency=12)
+ts_data_mean <- ts(df_mean2020$Wskaznik, start=c(2000, 1), frequency=12)
+```
+
+Korzystając z funkcji adf.test sprawdzamy, czy spełniona jest stacjonarność modelowanych danych.
+
+```{r, message=FALSE, warning=FALSE}
+adf.test(ts_data_doubleARIMA)
+adf.test(ts_data_mean)
+```
+Odrzucamy hipotezę zerową (pvalue = 0.01) i zakładamy stacjonarność danych. Parametr d będzie więc równy zero, ponieważ nie będzie konieczne różnicowanie.
+
+
+
+
+```{r}
+fit_doubleARIMA <- auto.arima(ts_data_doubleARIMA, d=0)
+forecast_values_doubleARIMA <- forecast(fit_doubleARIMA, h=24)
+fit_mean <- auto.arima(ts_data_mean, d=0)
+forecast_values_mean <- forecast(fit_mean, h=24)
+
+checkresiduals(fit_mean)
+checkresiduals(fit_doubleARIMA)
+```
+
+Pierwszą składową wykresu jest rozkład reszt w czasie, drugą jest ACF, pokazuje funkcję autokorelacji reszt. ostatnim wykresem jest histogram reszt, zbliżony do normalnego rozkładu.
+Funkcja auto.arima w obu przypadkach dopasowała parametry p = 1 oraz q = 1. 
+Na powyższych wykresach błędów modelu widać, że obydwa przedstawione rozwiązania są podobnie dopasowane. Jednakze, błędy w 2020 są praktycznie zerowe - wynika to z faktu, że rok ten jest dopasowany przez ten sam model. Mimo to zdecydowaliśmy się przyjąć wyniki z modelu korzystającego z podwójnej predykcji ze względu na jego odmienny charakter.
+Testem Ljung-Boxa upewniliśmy się, że nie ma istotnych autokorelacji w resztach. (pvalue>0.05).
+
+```{r, echo = FALSE}
+df <- read.csv('BICCtemp.txt', sep = ';', dec = ",")
+df_plot <- df
+df_plot$Date <- as.Date(paste(df_plot$Rok, df_plot$M.c, "01", sep = "-"))
+```
+
+```{r}
+forecast_values_doubleARIMA <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = forecast_values_doubleARIMA$mean[1:24])
+
+forecast_values_mean <- data.frame(
+  Date = seq(as.Date("2022-01-01"), by = "month", length.out = 24),
+  Point_Forecast = forecast_values_mean$mean[1:24])
+```
+
+```{r, echo=FALSE}
+df_plot$Type <- "Actual"
+forecast_values_doubleARIMA$Type <- "Double ARIMA"
+names(forecast_values_doubleARIMA)[2] <- "Wskaznik"
+
+forecast_values_mean$Type <- "Mean"
+names(forecast_values_mean)[2] <- "Wskaznik"
+```
+
+```{r}
+combined_df <- rbind(df_plot[, c("Date", "Wskaznik", "Type")], 
+                     forecast_values_doubleARIMA, 
+                     forecast_values_mean)
+```
+\newpage
+Ostatecznie, dane przewidziane przy użyciu omówionych metod modeli regresyjnych przedstawiają się następująco:
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(combined_df, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(size = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
+       x = "Date",
+       y = "Wskaznik") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("Actual" = "black", "Double ARIMA" = "red", "Mean" = "blue"))
+```
+
+```{r}
+ARIMA <- combined_df[combined_df$Type == 'Double ARIMA',]
+```
+
+```{r, echo=FALSE}
+# nadpisanie zeby potem zrobic tabele wszystkich metod
+ARIMA <- combined_df[combined_df$Type %in% c('Actual', 'Double ARIMA'),]
+```
+\newpage
+#### 2.2 Prophet
+
+Kolejną metodą przewidywania szeregu czasowego jest Prophet, przedstawiony przez Facebooka.[4] Na wyjściowym szeregu dokonujemy dekompozycji w następujący sposób:
+$$y(t) = g(t) + s(t) + h(t) + e_t$$
+W tym przypadku $g(t)$ jest funkcją trendu reprezentującą nieokresowe zmiany wartości szeregu czasowego, $s(t)$ jest funkcją zmian okresowych (np. miesięcznych), a $h(t)$ to efekt świąt, występujących w nieregularnych odstępach czasu. Zakładamy, że błąd $e_t$ ma rozkład normalny.
+Funkcje $g(t)$, $s(t)$, $h(t)$ są estymowane przy użyciu m. in. logistycznego modelu wzrostu oraz szeregów Fouriera, ściślej opisane w [4].
+
+Podstawiając nasze dane uzyskujemy następujące wyniki predykcji:
+
+```{r, message=FALSE, warning=FALSE}
+library(prophet)
+
+df_prophet <- df
+df_prophet$date <- as.Date(paste(df$Rok, df$M.c, "01", sep = "-"))
+df_prophet <- subset(df_prophet, select = c(date, Wskaznik))
+colnames(df_prophet) <- c('ds', 'y')
+model_prophet <- prophet(df_prophet)
+future <- make_future_dataframe(model_prophet,
+                                periods = 24,
+                                freq = 'month')
+forecast <- predict(model_prophet, future)
+forecast[c('ds', 'yhat')] %>%
+  tail(n = 24)
+
+prophet_plot_components(model_prophet, forecast)
+plot(model_prophet, forecast)
+```
+
+Na pierwszym wykresie widzimy krzywą trendu wyznaczoną przez model, łącznie z przewidzianymi ostatnimi latami wraz z przedziałem ufności (niebieskie pole na końcu krzywej), na drugim rysunku - uśrednione, ogólne roczne zmiany wskaźnika. Ostatni wykres przedstawia dodatkowo porównanie rzeczywistych danych (czarne punkty) z tymi estymowanymi przez Prophet (niebieska linia, wraz z przedziałem ufności).
+
+Zbadajmy teraz jakość predykcji, kiedy pominiemy rok 2020 w rozważaniach:
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+df_no_2020<- df %>% subset(Rok!=2020)
+
+df_prophet2 <- df_no_2020
+df_prophet2$date <- as.Date(paste(df_no_2020$Rok, df_no_2020$M.c, "01", sep = "-"))
+df_prophet2 <- subset(df_prophet2, select = c(date, Wskaznik))
+colnames(df_prophet2) <- c('ds', 'y')
+model_prophet2 <- prophet(df_prophet2)
+future2 <- make_future_dataframe(model_prophet2,
+                                periods = 24,
+                                freq = 'month')
+forecast2 <- predict(model_prophet2, future2)
+```
+
+```{r}
+forecast2[c('ds', 'yhat')] %>%
+  tail(n = 24)
+
+prophet_plot_components(model_prophet2, forecast2)
+```
+
+Obserwujemy, że po wyrzuceniu 2020, linia trendu zdecydowanie się wypłaszcza na koniec badanego okresu. Przez to, że model bierze pod uwagę współczynnik świąt, czyli nieregularnych skoków badanej zmiennej, w tym przypadku warto zostawić dane z 2020, zatem ostatecznie bierzemy pierwotną wersję prognozy.
+
+```{r}
+PROPHET <- forecast['yhat'] %>%
+  tail(n = 24)
+```
+
+```{r, echo = FALSE}
+rownames(PROPHET) <- 1:24
+colnames(PROPHET) <- 'Wskaznik'
+# PROPHET
+```
+
+#### 2.3 TBATS
+
+Metoda TBATS należy do popularnej grupy modeli statystycznych - modeli wygładzania wykładniczego. Do tej samej rodziny należy także STL, którą używaliścy do dekompozycji naszych danych. 
+
+Najczęściej używany model sezonowy przedstawia się w następujący sposób: [5]
+
+$$y_t = l_{t-1} + b_{t-1} + s_t + d_t$$
+$$l_t = l_{t-1} + b_{t-1} + \alpha d_t$$
+$$b_t = b_{t-1} + \beta d_t$$
+$$s_t = s_{t-m} + \gamma d_t$$
+gdzie $m$ to okres cykli sezonowych, $d_t$ reprezentuje losowy szum w danych, $l_t$, $b_t$, $s_t$ to komponenty odpowiednio: poziomu, trendu i sezonowości szeregu czasowego. Wartości $\alpha$, $\beta$ i $\gamma$ są tak zwanymi parametrami wygładzającymi, a $l_0$, $b_0$, $\{s_{1-m}, ..., s_0\}$ to zmienne wyjściowe. W tym modelu estymuje się właśnie zmienne wyjściowe oraz parametry. Warto dodać, że można estymować 2 składniki sezonowości $s_t^{(1)}$, $s_t^{(2)}$ wraz z parametrami $\gamma_1$ i $\gamma_2$, jednak w naszym przypadku bierzemy tylko jeden składnik - miesięczny.
+
+Następnie dokonujemy modyfikacji tego modelu, przy uwzględnieniu transformacji Box-Cox, błędów modelu ARMA oraz T wzorców sezonowości. Na koniec, składniki sezonowości przedstawiamy jako ich trygonometryczną reprezentację opartą na szeregach Fouriera. Ze wszystkich składowych modelu powstała jego nazwa: T - trigonometrical, B - Box-Cox transformation, A - ARMA errors, TS - T seasonal patterns.
+
+W celu ewaluacji jakości prognozy, będziemy porównywać ostatnie dane 2 lata z przewidzianymi wartościami na następne 2 lata, korzystając z dwóch metryk:
+
+1. średni bezwzględny błąd procentowy - MAPE (Mean Absolute Percentage Error):
+$$\frac{1}{n} \sum_{t=1}^n |\frac{Y_t - P_t}{Y_t}| * 100\%$$
+2. pierwiastek błędu średniokwadratowego - RMSE (Root Mean Squared Error):
+$$\sqrt{\frac{\sum_{t=1}^n (Y_t - P_t)^2}{n}}$$
+gdzie $Y_t$ - rzeczywista wartość, $P_t$ - prognozowana wartość.
+
+```{r, echo=FALSE}
+MAPE.error <- function(x, y) {
+  result <- mean(abs((x-y)/x)) * 100
+  return(result)
+}
+
+RMSE.error <- function(x, y) {
+  result <- sqrt((sum(x - y)^2)/length(x))
+  return(result)
+}
+```
+
+Po podstawieniu naszych danych otrzymujemy następujące wyniki:
+
+```{r, message=FALSE, warning=FALSE}
+ts_tbats <- msts(df$Wskaznik, seasonal.periods = 12)
+
+model.ts_tbats <- tbats(ts_tbats)
+
+model.ts_tbats.forecast <- forecast(model.ts_tbats, h = 24)
+
+plot(model.ts_tbats.forecast, main = 'Prognoza TBATS',
+     ylab = 'Wskaznik')
+model.ts_tbats.forecast$mean
+```
+
+W wykresie prognozy, niebieska linia oznacza przewidziane dane, wraz z przedziałami ufności na poziomie istotności $0.2$ oraz $0.05$. Przewidziane wartości zostały wypisane w tabeli pod nim.
+
+```{r}
+df.test <- tail(df$Wskaznik, n = 12 * 2)
+
+ts_tbats.predict <- predict(model.ts_tbats.forecast, df.test)
+
+ts_tbats.test_vs_predicted <- data.frame(df.test, model.ts_tbats.forecast$mean)
+matplot(ts_tbats.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2, ylab = 'Przypadek nr 1')
+```
+
+Na tym rysunku widzimy porównanie wartości z ostatnich dwóch lat (czarna linia) z przewidzianymi wartościami na następne 2 lata (czerwona przerywana linia). Obserwujemy tutaj zauważalne niedopasowanie krzywych na początku okresu - jest to następstwo wzięcia pod uwagę odstających wartości z roku 2020.
+
+```{r}
+MAPE.error(ts_tbats.test_vs_predicted$df.test,
+           ts_tbats.test_vs_predicted$model.ts_tbats.forecast.mean)
+RMSE.error(ts_tbats.test_vs_predicted$df.test,
+           ts_tbats.test_vs_predicted$model.ts_tbats.forecast.mean)
+```
+
+Ostatecznie, liczymy wartości błędów MAPE i RMSE - są one zawyżone z wyżej wymienionego powodu.
+
+Aby zmiejszyć wartości błędów, dokonujemy analizy bez 2020:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ts_tbats2 <- msts(df_no_2020$Wskaznik, seasonal.periods = 12)
+model.ts_tbats2 <- tbats(ts_tbats2)
+# plot(model.ts_tbats2)
+
+model.ts_tbats2.forecast <- forecast(model.ts_tbats2, h = 24)
+# plot(model.ts_tbats2.forecast)
+# model.ts_tbats2.forecast$mean
+
+df_no_2020.test <- tail(df_no_2020$Wskaznik, n = 12 * 2)
+
+ts_tbats2.predict <- predict(model.ts_tbats2.forecast, df_no_2020.test)
+ts_tbats2.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats2.forecast$mean)
+matplot(ts_tbats2.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2, ylab = 'Przypadek nr 2')
+
+cat('MAPE: ', MAPE.error(ts_tbats2.test_vs_predicted$df_no_2020.test,
+           ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean))
+cat('RMSE: ', RMSE.error(ts_tbats2.test_vs_predicted$df_no_2020.test,
+           ts_tbats2.test_vs_predicted$model.ts_tbats2.forecast.mean))
+```
+
+W przypadku wyrzucenia danych z 2020, zgodnie z oczekiwaniami, widzimy znaczny spadek błędów MAPE i RMSE. Zwróćmy uwagę, że do ewaluacji prognozy wzięliśmy lata 2019 i 2021 zamiast 2020-2021. Sprawdzimy jeszcze predykcję dla przypadków, gdy zamiast wartości z tego roku podstawimy średnią globalną wartość wskaźnika:
+
+```{r, echo=FALSE}
+df_mean2020 <- df
+
+df_mean2020[df_mean2020$Rok == 2020,]$Wskaznik <- mean(df_mean2020[df_mean2020$Rok != 2020,]$Wskaznik)
+
+
+
+ts_tbats3 <- msts(df_mean2020$Wskaznik, seasonal.periods = 12)
+model.ts_tbats3 <- tbats(ts_tbats3)
+# plot(model.ts_tbats3)
+
+model.ts_tbats3.forecast <- forecast(model.ts_tbats3, h = 24)
+# plot(model.ts_tbats3.forecast)
+# model.ts_tbats3.forecast$mean
+
+ts_tbats3.predict <- predict(model.ts_tbats3.forecast, df_no_2020.test)
+ts_tbats3.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats3.forecast$mean)
+matplot(ts_tbats3.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2, ylab = 'Przypadek nr 3')
+
+cat('MAPE: ', MAPE.error(ts_tbats3.test_vs_predicted$df_no_2020.test, ts_tbats3.test_vs_predicted$model.ts_tbats3.forecast.mean)) # 1.009
+cat('RMSE: ', RMSE.error(ts_tbats3.test_vs_predicted$df_no_2020.test, ts_tbats3.test_vs_predicted$model.ts_tbats3.forecast.mean)) # 2.643
+```
+
+Po raz kolejny, wartości błędu zmiejszyły się. Na koniec zbadajmy zachowanie błędów, gdy zamiast 2020 weźmiemy średni wskaźnik z ostatnich 5 lat:
+
+```{r, echo=FALSE}
+df_mean2020.2 <- df
+
+df_mean2020.2[df_mean2020.2$Rok == 2020,]$Wskaznik <- mean(df_mean2020.2[df_mean2020.2$Rok %in% 2015:2019,]$Wskaznik)
+
+ts_tbats4 <- msts(df_mean2020.2$Wskaznik, seasonal.periods = 12)
+model.ts_tbats4 <- tbats(ts_tbats4)
+# plot(model.ts_tbats4)
+
+model.ts_tbats4.forecast <- forecast(model.ts_tbats4, h = 24)
+# plot(model.ts_tbats4.forecast)
+# model.ts_tbats4.forecast$mean
+
+ts_tbats4.predict <- predict(model.ts_tbats4.forecast, df_no_2020.test)
+ts_tbats4.test_vs_predicted <- data.frame(df_no_2020.test, model.ts_tbats4.forecast$mean)
+matplot(ts_tbats4.test_vs_predicted, type = 'l', lty = 1:2, col = 1:2, ylab = 'Przypadek nr 4')
+
+cat('MAPE: ', MAPE.error(ts_tbats4.test_vs_predicted$df_no_2020.test, ts_tbats4.test_vs_predicted$model.ts_tbats4.forecast.mean)) # 1.065
+cat('RMSE: ', RMSE.error(ts_tbats4.test_vs_predicted$df_no_2020.test, ts_tbats4.test_vs_predicted$model.ts_tbats4.forecast.mean)) # 3.255
+```
+
+Najmniejsze wartości błędów otrzymujemy w przypadku podstawienia globalnej średniej za wartości z odstającego roku. Decydujemy jednak uwzględnić ostatni przypadek w ostatecznej predykcji, gdyż nie chcemy brać takich wyników, które będą zbyt zbliżone do wartości z ostatnich dwóch lat, ponieważ po raz kolejny, trend byłby zbyt spłaszczony na końcu okresu. Ostatecznie:
+
+```{r}
+TBATS <- model.ts_tbats4.forecast$mean %>% as.data.frame()
+```
+
+```{r, echo=FALSE}
+colnames(TBATS) <- 'Wskaznik'
+# TBATS
+```
+\newpage
+#### 2.4 Ostateczna predykcja
+
+Wszystkie wyniki wygenerowane przez omówione modele predykcji przedstawiają się w następujący sposób:
+
+```{r, echo=FALSE}
+PROPHET$Date <- ARIMA[ARIMA$Type == 'Double ARIMA',]$Date
+PROPHET$Type <- 'Prophet'
+
+TBATS$Date <- ARIMA[ARIMA$Type == 'Double ARIMA',]$Date
+TBATS$Type <- 'TBATS'
+
+FULL <- ARIMA %>% rbind(PROPHET) %>% rbind(TBATS)
+```
+
+```{r, echo=FALSE}
+ggplot(FULL, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(size = 0.4) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
+       x = "Date",
+       y = "Wskaznik") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("Actual" = "black", "Double ARIMA" = "red", "Prophet" = "green", "TBATS" = "blue"))
+
+temp <- data.frame(Date = PROPHET$Date, 
+           ARIMA = ARIMA[ARIMA$Type == 'Double ARIMA',]$Wskaznik,
+           Prophet = PROPHET$Wskaznik,
+           TBATS = TBATS$Wskaznik)
+temp
+```
+
+Ostateczne wyniki otrzymujemy biorąc średnią dla każdego miesiąca ze wszystkich metod:
+
+```{r, echo=FALSE}
+FINAL <- data.frame(
+  Date = PROPHET$Date,
+  Wskaznik = rowMeans(temp[,2:4])
+  )
+
+FINAL$Type <- 'Combination'
+
+FINALFINAL <- rbind(ARIMA[ARIMA$Type == 'Actual',], FINAL)
+FINALFINAL$group <- rep(1, 24*12)
+
+ggplot(FINALFINAL, aes(x = Date, y = Wskaznik, color = Type)) +
+  geom_line(size = 0.7, aes(group = group)) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(title = "Wskaznik bezrobocia w czasie z predykcja",
+       x = "Date",
+       y = "Wskaznik") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("Actual" = "black", "Combination" = "magenta"))
+```
+
+### 3. Przewidywanie
+
+Wyznaczona przez nas predykcja, łącząca w sobie modele ARIMA, Prophet oraz TBATS jako średnia arytmetyczna wszystkich prognoz prezentuje się następująco:
+
+```{r, echo=FALSE}
+FINAL$Date <- substr(FINAL$Date, 0, 7)
+FINAL[,c('Date', 'Wskaznik')]
+```
+
+### 4. Podsumowanie
+
+Zaproponowaliśmy w naszym badaniu metodę prognozowania opartą na uśrednieniu rezultatów kilku metod statystycznych w celu zwiększenia ostatecznej efektywności. Wykorzystane modele są dedykowane do szeregów czasowych z widoczną sezonowością, aby sprawdzały się w celach analizy i predykcji wartości wskaźnika bezrobocia. Ostateczna prognoza wydaje się dokładnie odzwierciedlać trend i sezonowość danych z przeszłości.
+
+### Literatura
+
+1. Cleveland, R. B., Cleveland, W. S., McRae, J. E., & Terpenning, I. J. (1990). STL: A seasonal-trend decomposition procedure based on loess. Journal of Official Statistics, 6(1), 3–33.
+
+2. Hersh, A., and T. B. Newman. "Linear Regression." AAP Grand Rounds 25, no. 6 (June 1, 2011): 68.
+
+3. Box G.E.P., Jenkins G.M., Reinsel G.C., Ljung G.M., (2015), Time Series
+Analysis: Forecasting and Control. Fifth Edition, John Wiley & Sons
+
+4. Taylor SJ, Letham B. Forecasting at Scale. The American Statistician. 2018
+
+5. De Livera A.M., Hyndman R.J., Snyder R.D., Forecasting time series with complex seasonal patterns using exponential smoothing. Journal of the American Statistical Association
+2011, 106, 1513–1527.
+
+6. https://github.com/cure-lab/LTSF-Linear
+
+
+
+
